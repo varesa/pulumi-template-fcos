@@ -1,0 +1,86 @@
+variant: fcos
+version: 1.0.0
+storage:
+  files:
+    - path: /etc/hostname
+      mode: 644
+      contents:
+        inline: "{{ fqdn }}"
+    - path: /usr/local/sbin/firstboot.sh
+      mode: 744
+      contents:
+        inline: |
+            set -euo pipefail
+            #
+            # Set up LVM
+            if ! pvscan | grep -q /dev/vdb; then
+                pvcreate /dev/vdb
+                vgcreate data0 /dev/vdb 
+
+                lvcreate -L5G --name logs data0
+                lvcreate -l100%FREE --name {{ container_type }} data0
+
+                mkfs.xfs /dev/data0/logs 
+                mkfs.xfs /dev/data0/{{ container_type }} 
+            fi
+
+            #
+            # Create and enable mount units
+            cat > /etc/systemd/system/var-log.mount <<EOF
+            [Unit]
+
+            [Mount]
+            What=/dev/data0/logs
+            Where=/var/log
+
+            [Install]
+            RequiredBy=local-fs.target
+            EOF
+
+            cat > /etc/systemd/system/var-lib-{{ container_type }}.mount <<EOF
+            [Unit]
+
+            [Mount]
+            What=/dev/data0/{{ container_type }}
+            Where=/var/lib/{{ container_type }}
+
+            [Install]
+            RequiredBy=local-fs.target
+            EOF
+
+            systemctl enable --now var-log.mount var-lib-{{ container_type }}.mount
+            restorecon -R /var/log
+            restorecon -R /var/lib/{{ container_type }}
+
+            #
+            # Install python for ansible
+            until rpm-ostree install python3 python3-libselinux || rpm-ostree status | grep -q 'LayeredPackages: python3 python3-libselinux'; do
+                # Wait until no other transactions are in progress and this succeeds
+                sleep 10
+            done
+
+            #
+            # And finally reboot
+            systemctl reboot
+
+systemd:
+  units:
+    - name: firstboot.service
+      enabled: true
+      contents: |
+        [Unit]
+        Description=Run setup tasks on first boot
+        ConditionFirstBoot=true
+
+        [Service]
+        ExecStart=/usr/bin/bash /usr/local/sbin/firstboot.sh
+
+        [Install]
+        RequiredBy=multi-user.target
+
+passwd:
+    users:
+    - name: core
+      ssh_authorized_keys:
+      - "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDi/o0Bu493Kz5wy7Z8pgoA0SY5X2pnu9lIkASd07r+ForgAkmrhn2rk/5vGpmL6L1EJu7MTlilPpuIpn34fvVdckm6y5JJm6IItDeq1p5VHIj33jdK5NCUB40NPQdaxfvKQAWIYav8jfYaeGAjroMGDUMZlsHwoB5nOmfy05l3DcSqvtSs2nn2lZNXn3kHQXLGBeHtoniFnGomGgg6/MAj1oT46xLncyEhlqjoAPqMg2mCC4KkuGSmTKyjBHeFzpeJOIo3bJDHv3RuShpVGMW6+OfFK783FIiIacMazErgakSOXZnXQzqNXV7wg4cenTL7MTiabfRjDMWgmogU9clV esa@desktop.tre.esav.fi"
+
