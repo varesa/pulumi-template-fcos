@@ -10,7 +10,7 @@ base_instance_spec = dict(
             flavor_name='m1.small',
             image_name='fcos-31-20200223',
             networks=[{'name': 'netname'}],
-            security_groups=['allow-admin-ssh'],
+            security_groups=['egress-all', 'icmp-all', 'admin-ssh'],
 )
 
 
