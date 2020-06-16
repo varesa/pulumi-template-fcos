@@ -1,6 +1,6 @@
 import pulumi
 from pulumi_openstack import compute, blockstorage
-from libs import create_ignition_config
+from lib import create_ignition_config
 
 
 def Host(hostname: str, domain: str, spec: dict) -> compute.Instance:
